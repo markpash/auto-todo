@@ -14,6 +14,10 @@ func getLatestReleaseVersion(repo string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github api responded with status code: %d", resp.StatusCode)
+	}
+
 	jsonResp := struct {
 		TagName string `json:"tag_name"`
 	}{}
