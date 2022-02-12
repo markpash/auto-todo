@@ -1,12 +1,17 @@
 package main
 
 import (
+	"embed"
+	"html/template"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/hashicorp/go-version"
 )
+
+//go:embed templates/*
+var templates embed.FS
 
 var alpineTodos map[string][]string
 var apkGithubMapping = map[string]string{
@@ -33,7 +38,7 @@ func main() {
 	}()
 
 	r := gin.Default()
-	r.LoadHTMLGlob("templates/*.tmpl")
+	r.SetHTMLTemplate(template.Must(template.New("").ParseFS(templates, "templates/*.tmpl")))
 	r.GET("/", func(c *gin.Context) {
 		c.HTML(http.StatusOK, "index.tmpl", gin.H{
 			"title":       "markpash.todo",
