@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -32,7 +33,7 @@ type apkIndex struct {
 	sig   []byte
 }
 
-func fetchAPKIndex(url string) (apkIndex, error) {
+func fetchAPKIndex(ctx context.Context, client http.Client, url string) (apkIndex, error) {
 	r, err := regexp.Compile(`(.*)\s<(.*)>`)
 	if err != nil {
 		return apkIndex{}, err
@@ -45,7 +46,12 @@ func fetchAPKIndex(url string) (apkIndex, error) {
 	}
 	apkVerRegex = r
 
-	index, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return apkIndex{}, err
+	}
+
+	index, err := client.Do(req)
 	if err != nil {
 		return apkIndex{}, err
 	}

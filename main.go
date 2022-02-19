@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"embed"
+	"fmt"
 	"html/template"
 	"net/http"
+	"os"
+	"os/signal"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -13,7 +17,7 @@ import (
 //go:embed templates/*
 var templates embed.FS
 
-var alpineTodos map[string][]string
+var alpineTodos map[string][]string = make(map[string][]string)
 var apkGithubMapping = map[string]string{
 	"coredns":    "coredns/coredns",
 	"conntracct": "ti-mo/conntracct",
@@ -22,47 +26,66 @@ var apkGithubMapping = map[string]string{
 }
 
 func main() {
-	ticker := time.NewTicker(1 * time.Hour)
-	done := make(chan struct{})
-	go func() {
-		for {
-			alpineTodos = make(map[string][]string)
-			doAlpine()
-			select {
-			case <-done:
-				return
-			case <-ticker.C:
-				continue
-			}
-		}
-	}()
-
-	r := gin.Default()
-	r.SetHTMLTemplate(template.Must(template.New("").ParseFS(templates, "templates/*.tmpl")))
-	r.GET("/", func(c *gin.Context) {
-		c.HTML(http.StatusOK, "index.tmpl", gin.H{
-			"title":       "markpash.todo",
-			"alpineTasks": alpineTodos,
-		})
-	})
-	r.Run()
-	done <- struct{}{}
+	if err := run(); err != nil {
+		fmt.Fprint(os.Stderr, err)
+		os.Exit(1)
+	}
 }
 
-func doAlpine() {
-	mainIdx, err := fetchAPKIndex(edgeMain)
-	if err != nil {
-		panic(err)
+func run() error {
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer cancel()
+
+	go func() {
+		defer cancel()
+
+		r := gin.Default()
+		r.SetHTMLTemplate(template.Must(template.New("").ParseFS(templates, "templates/*.tmpl")))
+		r.GET("/", func(c *gin.Context) {
+			c.HTML(http.StatusOK, "index.tmpl", gin.H{
+				"title":       "markpash.todo",
+				"alpineTasks": alpineTodos,
+			})
+		})
+		r.Run()
+	}()
+
+	ticker := time.NewTicker(1 * time.Hour)
+	for {
+		if err := doAlpine(ctx); err != nil {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			continue
+		}
+	}
+}
+
+func doAlpine(ctx context.Context) error {
+	// reset the global map
+	alpineTodos = make(map[string][]string)
+
+	client := http.Client{
+		Timeout: 10 * time.Second,
 	}
 
-	communityIdx, err := fetchAPKIndex(edgeCommunity)
+	mainIdx, err := fetchAPKIndex(ctx, client, edgeMain)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	testingIdx, err := fetchAPKIndex(edgeTesting)
+	communityIdx, err := fetchAPKIndex(ctx, client, edgeCommunity)
 	if err != nil {
-		panic(err)
+		return err
+	}
+
+	testingIdx, err := fetchAPKIndex(ctx, client, edgeTesting)
+	if err != nil {
+		return err
 	}
 
 	myPkgs := filterForMaintainer("mark@markpash.me", mainIdx, communityIdx, testingIdx)
@@ -75,20 +98,22 @@ func doAlpine() {
 
 		apkVer, err := version.NewVersion(ap.version)
 		if err != nil {
-			panic(err)
+			return err
 		}
-		ghLatest, err := getLatestReleaseVersion(ghRepo)
+		ghLatest, err := getLatestReleaseVersion(ctx, client, ghRepo)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		ghVer, err := version.NewVersion(ghLatest)
 		if err != nil {
-			panic(err)
+			return err
 		}
 
 		if ghVer.GreaterThan(apkVer) {
 			alpineTodos[name] = []string{ghVer.String(), apkVer.String()}
 		}
 	}
+
+	return nil
 }

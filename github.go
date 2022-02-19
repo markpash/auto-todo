@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 )
 
-func getLatestReleaseVersion(repo string) (string, error) {
+func getLatestReleaseVersion(ctx context.Context, client http.Client, repo string) (string, error) {
 	rlsURL := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
-	resp, err := http.Get(rlsURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rlsURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
