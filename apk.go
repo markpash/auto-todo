@@ -16,8 +16,8 @@ const edgeMain string = "http://dl-cdn.alpinelinux.org/alpine/edge/main/x86_64/A
 const edgeCommunity string = "http://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/APKINDEX.tar.gz"
 const edgeTesting string = "http://dl-cdn.alpinelinux.org/alpine/edge/testing/x86_64/APKINDEX.tar.gz"
 
-var maintainerRegex *regexp.Regexp
-var apkVerRegex *regexp.Regexp
+var maintainerRegex = regexp.MustCompile(`(.*)\s<(.*)>`)
+var apkVerRegex = regexp.MustCompile(`(.*)\-(.*)`)
 
 type apkPackage struct {
 	name            string
@@ -34,18 +34,6 @@ type apkIndex struct {
 }
 
 func fetchAPKIndex(ctx context.Context, client http.Client, url string) (apkIndex, error) {
-	r, err := regexp.Compile(`(.*)\s<(.*)>`)
-	if err != nil {
-		return apkIndex{}, err
-	}
-	maintainerRegex = r
-
-	r, err = regexp.Compile(`(.*)\-(.*)`)
-	if err != nil {
-		return apkIndex{}, err
-	}
-	apkVerRegex = r
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return apkIndex{}, err
